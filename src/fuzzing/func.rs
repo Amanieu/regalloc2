@@ -495,7 +495,7 @@ impl Func {
                         // Pick an operand and make it a fixed reg.
                         let i = u.int_in_range(0..=(operands.len() - 1))?;
                         let op = operands[i];
-                        let fixed_reg = PReg::new(u.int_in_range(0..=62)?, op.class());
+                        let fixed_reg = PReg::new(u.int_in_range(0..=119)?, op.class());
                         let fixed_list = match op.pos() {
                             OperandPos::Early => &mut fixed_early,
                             OperandPos::Late => &mut fixed_late,
@@ -537,7 +537,7 @@ impl Func {
                     }
                 } else if opts.fixed_nonallocatable && bool::arbitrary(u)? {
                     operands.push(Operand::fixed_nonallocatable(PReg::new(
-                        63,
+                        121,
                         RegClass::arbitrary(u)?,
                     )));
                 }
@@ -683,7 +683,7 @@ pub fn machine_env() -> MachineEnv {
         regs(24..32, RegClass::Vector),
     ];
     let scratch_by_class: [Option<PReg>; 3] = [None, None, None];
-    let fixed_stack_slots = (32..63)
+    let fixed_stack_slots = (32..120)
         .flat_map(|i| {
             [
                 PReg::new(i, RegClass::Int),
@@ -692,7 +692,7 @@ pub fn machine_env() -> MachineEnv {
             ]
         })
         .collect();
-    // Register 63 is reserved for use as a fixed non-allocatable register.
+    // Register 121 is reserved for use as a fixed non-allocatable register.
     MachineEnv {
         preferred_regs_by_class,
         non_preferred_regs_by_class,
