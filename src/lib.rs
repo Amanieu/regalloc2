@@ -161,7 +161,7 @@ impl PReg {
 }
 
 impl core::fmt::Debug for PReg {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "PReg(hw = {}, class = {:?}, index = {})",
@@ -173,7 +173,7 @@ impl core::fmt::Debug for PReg {
 }
 
 impl core::fmt::Display for PReg {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let class = match self.class() {
             RegClass::Int => "i",
             RegClass::Float => "f",
@@ -341,7 +341,7 @@ impl VReg {
 }
 
 impl core::fmt::Debug for VReg {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "VReg(vreg = {}, class = {:?})",
@@ -352,7 +352,7 @@ impl core::fmt::Debug for VReg {
 }
 
 impl core::fmt::Display for VReg {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "v{}", self.vreg())
     }
 }
@@ -412,7 +412,7 @@ impl SpillSlot {
 }
 
 impl core::fmt::Display for SpillSlot {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "stack{}", self.index())
     }
 }
@@ -443,7 +443,7 @@ pub enum OperandConstraint {
 }
 
 impl core::fmt::Display for OperandConstraint {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Any => write!(f, "any"),
             Self::Reg => write!(f, "reg"),
@@ -827,13 +827,13 @@ impl Operand {
 }
 
 impl core::fmt::Debug for Operand {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Display::fmt(self, f)
     }
 }
 
 impl core::fmt::Display for Operand {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if let Some(preg) = self.as_fixed_nonallocatable() {
             return write!(f, "Fixed: {preg}");
         }
@@ -871,13 +871,13 @@ pub struct Allocation {
 }
 
 impl core::fmt::Debug for Allocation {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Display::fmt(self, f)
     }
 }
 
 impl core::fmt::Display for Allocation {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.kind() {
             AllocationKind::None => write!(f, "none"),
             AllocationKind::Reg => write!(f, "{}", self.as_reg().unwrap()),
@@ -1208,7 +1208,7 @@ pub struct ProgPoint {
 }
 
 impl core::fmt::Debug for ProgPoint {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "progpoint{}{}",
@@ -1498,7 +1498,7 @@ pub enum RegAllocError {
 }
 
 impl core::fmt::Display for RegAllocError {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:?}", self)
     }
 }

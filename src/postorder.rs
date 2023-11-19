@@ -25,7 +25,7 @@ pub fn calculate<'a, SuccFn: Fn(Block) -> &'a [Block]>(
         succs: &'a [Block],
         next_succ: usize,
     }
-    let mut stack: SmallVec<[State; 64]> = smallvec![];
+    let mut stack: SmallVec<[State<'_>; 64]> = smallvec![];
 
     visited[entry.index()] = true;
     stack.push(State {

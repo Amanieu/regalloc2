@@ -303,7 +303,7 @@ impl Iterator for SetBitsIter {
 }
 
 impl core::fmt::Debug for IndexSet {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let vals = self.iter().collect::<Vec<_>>();
         write!(f, "{:?}", vals)
     }
