@@ -157,18 +157,4 @@ impl<'a, F: Function> Env<'a, F> {
         trace!(" -> final: {:?}", req);
         Ok(req)
     }
-
-    pub fn merge_bundle_requirements(
-        &self,
-        a: LiveBundleIndex,
-        b: LiveBundleIndex,
-    ) -> Result<Requirement, RequirementConflict> {
-        let req_a = self
-            .compute_requirement(a)
-            .map_err(|_| RequirementConflict)?;
-        let req_b = self
-            .compute_requirement(b)
-            .map_err(|_| RequirementConflict)?;
-        req_a.merge(req_b)
-    }
 }

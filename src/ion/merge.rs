@@ -74,8 +74,7 @@ impl<'a, F: Function> Env<'a, F> {
             }
         };
 
-        // Check for overlap in LiveRanges and for conflicting
-        // requirements.
+        // Check for overlap in LiveRanges.
         let ranges_from = &self.bundles[from].ranges[..];
         let ranges_to = &self.bundles[to].ranges[..];
         let mut idx_from = 0;
@@ -105,18 +104,6 @@ impl<'a, F: Function> Env<'a, F> {
                     ranges_from[idx_from].index,
                     ranges_to[idx_to].index
                 );
-                return false;
-            }
-        }
-
-        // Check for a requirements conflict.
-        if self.bundles[from].cached_stack()
-            || self.bundles[from].cached_fixed()
-            || self.bundles[to].cached_stack()
-            || self.bundles[to].cached_fixed()
-        {
-            if self.merge_bundle_requirements(from, to).is_err() {
-                trace!(" -> conflicting requirements; aborting merge");
                 return false;
             }
         }
