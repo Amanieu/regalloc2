@@ -14,14 +14,14 @@
 
 use super::{Env, LiveBundleIndex, SpillSet, SpillSlotIndex, VRegIndex};
 use crate::{
-    ion::data_structures::{BlockparamOut, CodeRange},
-    Function, Inst, OperandConstraint, OperandKind, PReg, ProgPoint,
+    ion::data_structures::CodeRange, Block, Function, OperandConstraint, OperandKind, PReg,
+    ProgPoint,
 };
-use alloc::format;
+use alloc::{format, vec::Vec};
 use smallvec::smallvec;
 
 impl<'a, F: Function> Env<'a, F> {
-    pub fn merge_bundles(&mut self, from: LiveBundleIndex, to: LiveBundleIndex) -> bool {
+    fn merge_bundles(&mut self, from: LiveBundleIndex, to: LiveBundleIndex) -> bool {
         if from == to {
             // Merge bundle into self -- trivial merge.
             return true;
@@ -224,9 +224,8 @@ impl<'a, F: Function> Env<'a, F> {
         true
     }
 
-    pub fn merge_vreg_bundles(&mut self) {
-        // Create a bundle for every vreg, initially.
-        trace!("merge_vreg_bundles: creating vreg bundles");
+    // Create a bundle for every vreg, initially.
+    fn create_vreg_bundles(&mut self) {
         for vreg in 0..self.vregs.len() {
             let vreg = VRegIndex::new(vreg);
             if self.vregs[vreg].ranges.is_empty() {
@@ -290,12 +289,15 @@ impl<'a, F: Function> Env<'a, F> {
             });
             self.bundles[bundle].spillset = ssidx;
         }
+    }
 
-        for inst in 0..self.func.num_insts() {
-            let inst = Inst::new(inst);
+    /// Merges bundles in the given block.
+    fn merge_bundles_in_block(&mut self, block: Block) {
+        let insns = self.func.block_insns(block);
 
-            // Attempt to merge Reuse-constraint operand outputs with the
-            // corresponding inputs.
+        // Attempt to merge Reuse-constraint operand outputs with the
+        // corresponding inputs.
+        for inst in insns.iter() {
             for op in self.func.inst_operands(inst) {
                 if let OperandConstraint::Reuse(reuse_idx) = op.constraint() {
                     let src_vreg = op.vreg();
@@ -316,25 +318,75 @@ impl<'a, F: Function> Env<'a, F> {
         }
 
         // Attempt to merge blockparams with their inputs.
-        for i in 0..self.blockparam_outs.len() {
-            let BlockparamOut {
-                from_vreg, to_vreg, ..
-            } = self.blockparam_outs[i];
-            trace!(
-                "trying to merge blockparam v{} with input v{}",
-                to_vreg.index(),
-                from_vreg.index()
-            );
-            let to_bundle = self.ranges[self.vregs[to_vreg].ranges[0].index].bundle;
-            debug_assert!(to_bundle.is_valid());
-            let from_bundle = self.ranges[self.vregs[from_vreg].ranges[0].index].bundle;
-            debug_assert!(from_bundle.is_valid());
-            trace!(
-                " -> from bundle{} to bundle{}",
-                from_bundle.index(),
-                to_bundle.index()
-            );
-            self.merge_bundles(from_bundle, to_bundle);
+        for (i, &succ) in self.func.block_succs(block).iter().enumerate() {
+            let blockparams_in = self.func.block_params(succ);
+            let blockparams_out = self.func.branch_blockparams(block, insns.last(), i);
+            for (&blockparam_in, &blockparam_out) in blockparams_in.iter().zip(blockparams_out) {
+                let from_vreg = VRegIndex::new(blockparam_out.vreg());
+                let to_vreg = VRegIndex::new(blockparam_in.vreg());
+                trace!(
+                    "trying to merge blockparam v{} with input v{}",
+                    to_vreg.index(),
+                    from_vreg.index()
+                );
+                let to_bundle = self.ranges[self.vregs[to_vreg].ranges[0].index].bundle;
+                debug_assert!(to_bundle.is_valid());
+                let from_bundle = self.ranges[self.vregs[from_vreg].ranges[0].index].bundle;
+                debug_assert!(from_bundle.is_valid());
+                trace!(
+                    " -> from bundle{} to bundle{}",
+                    from_bundle.index(),
+                    to_bundle.index()
+                );
+                self.merge_bundles(from_bundle, to_bundle);
+            }
+        }
+    }
+
+    /// Get a list of blocks sorted by priority.
+    ///
+    /// Each merge eliminates the need for one move instruction in the final
+    /// program. However a successful merge can cause a future merge to fail
+    /// due to interference. Therefore we want to prioritize merges that have
+    /// the highest impact:
+    ///
+    /// * We want to eliminate moves in loops that are executed many times.
+    /// * We want to eliminate moves in split critical edge blocks, since it
+    ///   allows the entire block to be eliminated with jump threading.
+    ///
+    /// The heuristic is based on `compareMBBPriority` from LLVM.
+    fn blocks_by_merge_priority(&mut self) -> Vec<Block> {
+        let loop_depth = |block: Block| self.cfginfo.approx_loop_depth[block.index()];
+        let is_split_edge = |block: Block| {
+            // A split critical edge is an artifical block which only exists for
+            // the sake of passing blockparams to another block.
+            self.func.block_insns(block).len() == 1 && self.func.block_succs(block).len() == 1
+        };
+        let num_connections =
+            |block: Block| self.func.block_succs(block).len() + self.func.block_preds(block).len();
+
+        let mut blocks: Vec<_> = (0..self.func.num_blocks()).map(|i| Block::new(i)).collect();
+        blocks.sort_by(|&a, &b| {
+            // Prioritize deeper loops first.
+            loop_depth(a)
+                .cmp(&loop_depth(b))
+                .reverse()
+                // Prioritize critical edges to enable jump threading.
+                .then_with(|| is_split_edge(a).cmp(&is_split_edge(b)).reverse())
+                // Prioritize blocks which are more connected in the CFG.
+                .then_with(|| num_connections(a).cmp(&num_connections(b)).reverse())
+            // Otherwise follow the original block order.
+        });
+        blocks
+    }
+
+    pub fn merge_vreg_bundles(&mut self) {
+        trace!("merge_vreg_bundles: creating vreg bundles");
+
+        self.create_vreg_bundles();
+
+        for block in self.blocks_by_merge_priority() {
+            self.merge_bundles_in_block(block);
         }
 
         trace!("done merging bundles");
