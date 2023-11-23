@@ -38,6 +38,7 @@ use smallvec::smallvec;
 pub(crate) mod dump;
 pub(crate) mod moves;
 pub(crate) mod spill;
+pub(crate) mod split;
 pub(crate) mod stackmap;
 
 impl<'a, F: Function> Env<'a, F> {
