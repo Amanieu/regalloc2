@@ -253,11 +253,30 @@ impl<'a, F: Function> Env<'a, F> {
             // the spill bundle.  (We are careful to treat the "starts at
             // def" flag as an implicit first def even if no def-type Use
             // is present.)
-            while let Some(entry) = self.bundles[bundle].ranges.last().cloned() {
-                let end = entry.range.to;
-                let vreg = self.ranges[entry.index].vreg;
-                let last_use = self.ranges[entry.index].uses.last().map(|u| u.pos);
-                if last_use.is_none() {
+            self.trim_bundle_tail(bundle);
+            self.trim_bundle_head(new_bundle);
+        }
+
+        if self.bundles[bundle].ranges.len() > 0 {
+            self.recompute_bundle_properties(bundle);
+            let prio = self.bundles[bundle].prio;
+            self.allocation_queue
+                .insert(bundle, prio as usize, reg_hint);
+        }
+        if self.bundles[new_bundle].ranges.len() > 0 {
+            self.recompute_bundle_properties(new_bundle);
+            let prio = self.bundles[new_bundle].prio;
+            self.allocation_queue
+                .insert(new_bundle, prio as usize, reg_hint);
+        }
+    }
+
+    /// Trims any "empty space" at the end of the given bundle and moves the
+    /// live ranges into the spill bundle.
+    fn trim_bundle_tail(&mut self, bundle: LiveBundleIndex) {
+        while let Some(entry) = self.bundles[bundle].ranges.last().cloned() {
+            match self.ranges[entry.index].uses.iter().last() {
+                None => {
                     let spill = self
                         .get_or_create_spill_bundle(bundle, /* create_if_absent = */ true)
                         .unwrap();
@@ -272,122 +291,121 @@ impl<'a, F: Function> Env<'a, F> {
                     self.ranges[entry.index].bundle = spill;
                     continue;
                 }
-                let last_use = last_use.unwrap();
-                let split = ProgPoint::before(last_use.inst().next());
-                if split < end {
+                Some(last_use) => {
+                    let vreg = self.ranges[entry.index].vreg;
+                    let end = entry.range.to;
+                    let split = ProgPoint::before(last_use.pos.inst().next());
+                    if split < end {
+                        let spill = self
+                            .get_or_create_spill_bundle(bundle, /* create_if_absent = */ true)
+                            .unwrap();
+
+                        self.bundles[bundle].ranges.last_mut().unwrap().range.to = split;
+                        self.ranges[entry.index].range.to = split;
+
+                        let range = CodeRange {
+                            from: split,
+                            to: end,
+                        };
+                        let empty_lr = self.ranges.add(range);
+                        self.ranges[empty_lr].bundle = spill;
+                        self.ranges[empty_lr].vreg = vreg;
+
+                        self.bundles[spill].ranges.push(LiveRangeListEntry {
+                            range,
+                            index: empty_lr,
+                        });
+                        self.vregs[vreg].ranges.push(LiveRangeListEntry {
+                            range,
+                            index: empty_lr,
+                        });
+
+                        trace!(
+                            " -> bundle {:?} range {:?}: last use implies split point {:?}",
+                            bundle,
+                            entry.index,
+                            split
+                        );
+                        trace!(
+                            " -> moving trailing empty region to new spill bundle {:?} with new LR {:?}",
+                            spill,
+                            empty_lr
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Trims any "empty space" at the start of the given bundle and moves the
+    /// live ranges into the spill bundle.
+    fn trim_bundle_head(&mut self, bundle: LiveBundleIndex) {
+        while let Some(entry) = self.bundles[bundle].ranges.first().cloned() {
+            if self.ranges[entry.index].has_flag(LiveRangeFlag::StartsAtDef) {
+                break;
+            }
+
+            match self.ranges[entry.index].uses.first() {
+                None => {
                     let spill = self
                         .get_or_create_spill_bundle(bundle, /* create_if_absent = */ true)
                         .unwrap();
-                    self.bundles[bundle].ranges.last_mut().unwrap().range.to = split;
-                    self.ranges[self.bundles[bundle].ranges.last().unwrap().index]
-                        .range
-                        .to = split;
-                    let range = CodeRange {
-                        from: split,
-                        to: end,
-                    };
-                    let empty_lr = self.ranges.add(range);
-                    self.bundles[spill].ranges.push(LiveRangeListEntry {
-                        range,
-                        index: empty_lr,
-                    });
-                    self.ranges[empty_lr].bundle = spill;
-                    self.vregs[vreg].ranges.push(LiveRangeListEntry {
-                        range,
-                        index: empty_lr,
-                    });
-                    trace!(
-                        " -> bundle {:?} range {:?}: last use implies split point {:?}",
-                        bundle,
-                        entry.index,
-                        split
-                    );
-                    trace!(
-                    " -> moving trailing empty region to new spill bundle {:?} with new LR {:?}",
-                    spill,
-                    empty_lr
-                );
-                }
-                break;
-            }
-            while let Some(entry) = self.bundles[new_bundle].ranges.first().cloned() {
-                if self.ranges[entry.index].has_flag(LiveRangeFlag::StartsAtDef) {
-                    break;
-                }
-                let start = entry.range.from;
-                let vreg = self.ranges[entry.index].vreg;
-                let first_use = self.ranges[entry.index].uses.first().map(|u| u.pos);
-                if first_use.is_none() {
-                    let spill = self
-                        .get_or_create_spill_bundle(new_bundle, /* create_if_absent = */ true)
-                        .unwrap();
                     trace!(
                         " -> bundle {:?} range {:?}: no uses; moving to spill bundle {:?}",
-                        new_bundle,
+                        bundle,
                         entry.index,
                         spill
                     );
                     self.bundles[spill].ranges.push(entry);
-                    self.bundles[new_bundle].ranges.drain(..1);
+                    self.bundles[bundle].ranges.drain(..1);
                     self.ranges[entry.index].bundle = spill;
                     continue;
                 }
-                let first_use = first_use.unwrap();
-                let split = ProgPoint::before(first_use.inst());
-                if split > start {
-                    let spill = self
-                        .get_or_create_spill_bundle(new_bundle, /* create_if_absent = */ true)
-                        .unwrap();
-                    self.bundles[new_bundle]
-                        .ranges
-                        .first_mut()
-                        .unwrap()
-                        .range
-                        .from = split;
-                    self.ranges[self.bundles[new_bundle].ranges.first().unwrap().index]
-                        .range
-                        .from = split;
-                    let range = CodeRange {
-                        from: start,
-                        to: split,
-                    };
-                    let empty_lr = self.ranges.add(range);
-                    self.bundles[spill].ranges.push(LiveRangeListEntry {
-                        range,
-                        index: empty_lr,
-                    });
-                    self.ranges[empty_lr].bundle = spill;
-                    self.vregs[vreg].ranges.push(LiveRangeListEntry {
-                        range,
-                        index: empty_lr,
-                    });
-                    trace!(
-                        " -> bundle {:?} range {:?}: first use implies split point {:?}",
-                        bundle,
-                        entry.index,
-                        first_use,
-                    );
-                    trace!(
-                        " -> moving leading empty region to new spill bundle {:?} with new LR {:?}",
-                        spill,
-                        empty_lr
-                    );
-                }
-                break;
-            }
-        }
+                Some(first_use) => {
+                    let vreg = self.ranges[entry.index].vreg;
+                    let start = entry.range.from;
+                    let split = ProgPoint::before(first_use.pos.inst());
+                    if split > start {
+                        let spill = self
+                            .get_or_create_spill_bundle(bundle, /* create_if_absent = */ true)
+                            .unwrap();
 
-        if self.bundles[bundle].ranges.len() > 0 {
-            self.recompute_bundle_properties(bundle);
-            let prio = self.bundles[bundle].prio;
-            self.allocation_queue
-                .insert(bundle, prio as usize, reg_hint);
-        }
-        if self.bundles[new_bundle].ranges.len() > 0 {
-            self.recompute_bundle_properties(new_bundle);
-            let prio = self.bundles[new_bundle].prio;
-            self.allocation_queue
-                .insert(new_bundle, prio as usize, reg_hint);
+                        self.bundles[bundle].ranges.first_mut().unwrap().range.from = split;
+                        self.ranges[entry.index].range.from = split;
+
+                        let range = CodeRange {
+                            from: start,
+                            to: split,
+                        };
+                        let empty_lr = self.ranges.add(range);
+                        self.ranges[empty_lr].bundle = spill;
+                        self.ranges[empty_lr].vreg = vreg;
+
+                        self.bundles[spill].ranges.push(LiveRangeListEntry {
+                            range,
+                            index: empty_lr,
+                        });
+                        self.vregs[vreg].ranges.push(LiveRangeListEntry {
+                            range,
+                            index: empty_lr,
+                        });
+
+                        trace!(
+                            " -> bundle {:?} range {:?}: first use implies split point {:?}",
+                            bundle,
+                            entry.index,
+                            split,
+                        );
+                        trace!(
+                            " -> moving leading empty region to new spill bundle {:?} with new LR {:?}",
+                            spill,
+                            empty_lr
+                        );
+                    }
+                    break;
+                }
+            }
         }
     }
 
