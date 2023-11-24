@@ -49,7 +49,9 @@ pub fn spill_weight_from_constraint(
     let constraint_bonus: f32 = match constraint {
         OperandConstraint::Any => 1000.0,
         OperandConstraint::Reg | OperandConstraint::FixedReg(_) => 2000.0,
-        _ => 0.0,
+        OperandConstraint::AnyCold => 0.0,
+        OperandConstraint::Stack => 0.0,
+        OperandConstraint::Reuse(_) => 0.0,
     };
     SpillWeight(hot_bonus + def_bonus + constraint_bonus)
 }
@@ -862,7 +864,7 @@ impl<'a, F: Function> Env<'a, F> {
                     let mut first_stack_slot = None;
                     for u in uses.iter() {
                         match u.operand.constraint() {
-                            OperandConstraint::Any => {
+                            OperandConstraint::Any | OperandConstraint::AnyCold => {
                                 first_reg_slot.get_or_insert(u.slot);
                                 first_stack_slot.get_or_insert(u.slot);
                             }
