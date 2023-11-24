@@ -117,7 +117,7 @@ impl<'a, F: Function> Env<'a, F> {
             }
             OperandConstraint::Reg | OperandConstraint::Reuse(_) => Requirement::Register,
             OperandConstraint::Stack => Requirement::Stack,
-            OperandConstraint::Any => Requirement::Any,
+            OperandConstraint::Any | OperandConstraint::AnyCold => Requirement::Any,
         }
     }
 

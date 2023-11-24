@@ -232,7 +232,11 @@ impl Arbitrary<'_> for RegClass {
 
 impl Arbitrary<'_> for OperandConstraint {
     fn arbitrary(u: &mut Unstructured) -> ArbitraryResult<Self> {
-        Ok(*u.choose(&[OperandConstraint::Any, OperandConstraint::Reg])?)
+        Ok(*u.choose(&[
+            OperandConstraint::Any,
+            OperandConstraint::AnyCold,
+            OperandConstraint::Reg,
+        ])?)
     }
 }
 

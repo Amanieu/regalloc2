@@ -680,7 +680,7 @@ impl CheckerState {
         checker: &Checker<'a, F>,
     ) -> Result<(), CheckerError> {
         match op.constraint() {
-            OperandConstraint::Any => {}
+            OperandConstraint::Any | OperandConstraint::AnyCold => {}
             OperandConstraint::Reg => {
                 if let Some(preg) = alloc.as_reg() {
                     // Reject pregs that represent a fixed stack slot.

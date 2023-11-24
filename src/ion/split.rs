@@ -452,7 +452,10 @@ impl<'a, F: Function> Env<'a, F> {
                 // any-constrained uses will be easy to satisfy. Solving those constraints earlier
                 // could create unnecessary conflicts with existing bundles that need to fit in a
                 // register, more strict requirements, so we delay them eagerly.
-                if u.operand.constraint() == OperandConstraint::Any {
+                if matches!(
+                    u.operand.constraint(),
+                    OperandConstraint::Any | OperandConstraint::AnyCold
+                ) {
                     trace!("    -> migrating this any-constrained use to the spill range");
                     spill_uses.push(u);
 

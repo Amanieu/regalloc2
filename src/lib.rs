@@ -443,6 +443,9 @@ impl core::fmt::Display for SpillSlot {
 pub enum OperandConstraint {
     /// Any location is fine (register or stack slot).
     Any,
+    /// Same as `Any`, but additionally indicates that this operand is only
+    /// accessed in cold paths such as trap handlers.
+    AnyCold,
     /// Operand must be in a register. Register is read-only for Uses.
     Reg,
     /// Operand must be on the stack.
@@ -457,6 +460,7 @@ impl core::fmt::Display for OperandConstraint {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Any => write!(f, "any"),
+            Self::AnyCold => write!(f, "any_cold"),
             Self::Reg => write!(f, "reg"),
             Self::Stack => write!(f, "stack"),
             Self::FixedReg(preg) => write!(f, "fixed({})", preg),
@@ -536,8 +540,9 @@ pub struct Operand {
     /// - 1xxxxxx => FixedReg(preg)
     /// - 01xxxxx => Reuse(index)
     /// - 0000000 => Any
-    /// - 0000001 => Reg
-    /// - 0000010 => Stack
+    /// - 0000001 => AnyCold
+    /// - 0000010 => Reg
+    /// - 0000011 => Stack
     /// - _ => Unused for now
     bits: u32,
 }
@@ -554,8 +559,9 @@ impl Operand {
         let mut class_field = vreg.class() as u32;
         let constraint_field = match constraint {
             OperandConstraint::Any => 0,
-            OperandConstraint::Reg => 1,
-            OperandConstraint::Stack => 2,
+            OperandConstraint::AnyCold => 1,
+            OperandConstraint::Reg => 2,
+            OperandConstraint::Stack => 3,
             OperandConstraint::FixedReg(preg) => {
                 debug_assert_eq!(preg.class(), vreg.class());
                 if preg.hw_enc() & 0b1000000 != 0 {
@@ -812,8 +818,9 @@ impl Operand {
         } else {
             match constraint_field {
                 0 => OperandConstraint::Any,
-                1 => OperandConstraint::Reg,
-                2 => OperandConstraint::Stack,
+                1 => OperandConstraint::AnyCold,
+                2 => OperandConstraint::Reg,
+                3 => OperandConstraint::Stack,
                 _ => unreachable!(),
             }
         }
