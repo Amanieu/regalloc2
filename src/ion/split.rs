@@ -308,6 +308,13 @@ impl<'a, F: Function> Env<'a, F> {
             .ranges
             .iter()
             .flat_map(|entry| self.ranges[entry.index].uses.iter())
+            // Trim AnyCold uses in addition to empty live ranges: these have no
+            // spill weight so there is no cost to moving them to the spill
+            // bundle.
+            .filter(|u| {
+                !(u.operand.constraint() == OperandConstraint::AnyCold
+                    && u.operand.kind() == OperandKind::Use)
+            })
             .next_back()
         else {
             return;
@@ -346,6 +353,13 @@ impl<'a, F: Function> Env<'a, F> {
             .ranges
             .iter()
             .flat_map(|entry| self.ranges[entry.index].uses.iter())
+            // Trim AnyCold uses in addition to empty live ranges: these have no
+            // spill weight so there is no cost to moving them to the spill
+            // bundle.
+            .filter(|u| {
+                !(u.operand.constraint() == OperandConstraint::AnyCold
+                    && u.operand.kind() == OperandKind::Use)
+            })
             .next()
         else {
             return;
