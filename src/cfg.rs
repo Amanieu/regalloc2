@@ -30,6 +30,12 @@ pub struct CFGInfo {
     /// indices. Otherwise, it will be approximate, but should still
     /// be usable for heuristic purposes.
     pub approx_loop_depth: Vec<u32>,
+    /// For each block, the next block which is at a lower loop depth, or
+    /// `Block::invalid` if it is not in a loop.
+    pub next_outer_loop: Vec<Block>,
+    /// For each block, the previous block which is at a lower loop depth, or
+    /// `Block::invalid` if it is not in a loop.
+    pub prev_outer_loop: Vec<Block>,
 }
 
 impl CFGInfo {
@@ -48,6 +54,8 @@ impl CFGInfo {
         let mut block_exit = vec![ProgPoint::before(Inst::invalid()); f.num_blocks()];
         let mut backedge_in = vec![0; f.num_blocks()];
         let mut backedge_out = vec![0; f.num_blocks()];
+        let mut next_outer_loop = vec![Block::invalid(); f.num_blocks()];
+        let mut prev_outer_loop = vec![Block::invalid(); f.num_blocks()];
 
         for block in 0..f.num_blocks() {
             let block = Block::new(block);
@@ -100,9 +108,11 @@ impl CFGInfo {
         let mut approx_loop_depth = vec![];
         let mut backedge_stack: SmallVec<[usize; 4]> = smallvec![];
         let mut cur_depth = 0;
+        let mut max_depth = 0;
         for block in 0..f.num_blocks() {
             if backedge_in[block] > 0 {
                 cur_depth += 1;
+                max_depth = max_depth.max(cur_depth);
                 backedge_stack.push(backedge_in[block]);
             }
 
@@ -118,6 +128,28 @@ impl CFGInfo {
             }
         }
 
+        let mut block_at_depth: SmallVec<[Block; 4]> =
+            smallvec![Block::invalid(); max_depth as usize];
+        for block in 0..f.num_blocks() {
+            let cur_depth = approx_loop_depth[block];
+            for depth in cur_depth..max_depth {
+                block_at_depth[depth as usize] = Block::new(block);
+            }
+            if cur_depth > 0 {
+                prev_outer_loop[block] = block_at_depth[cur_depth as usize - 1];
+            }
+        }
+        block_at_depth.fill(Block::invalid());
+        for block in (0..f.num_blocks()).rev() {
+            let cur_depth = approx_loop_depth[block];
+            for depth in cur_depth..max_depth {
+                block_at_depth[depth as usize] = Block::new(block);
+            }
+            if cur_depth > 0 {
+                next_outer_loop[block] = block_at_depth[cur_depth as usize - 1];
+            }
+        }
+
         Ok(CFGInfo {
             postorder,
             domtree,
@@ -125,6 +157,8 @@ impl CFGInfo {
             block_entry,
             block_exit,
             approx_loop_depth,
+            next_outer_loop,
+            prev_outer_loop,
         })
     }
 

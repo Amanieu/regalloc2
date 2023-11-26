@@ -697,20 +697,7 @@ impl<'a, F: Function> Env<'a, F> {
                 // Adjust `split_at_point` if it is within a deeper loop
                 // than the bundle start -- hoist it to just before the
                 // first loop header it encounters.
-                let bundle_start_depth = self.cfginfo.approx_loop_depth
-                    [self.cfginfo.insn_block[bundle_start.inst().index()].index()];
-                let split_at_depth = self.cfginfo.approx_loop_depth
-                    [self.cfginfo.insn_block[split_at_point.inst().index()].index()];
-                if split_at_depth > bundle_start_depth {
-                    for block in (self.cfginfo.insn_block[bundle_start.inst().index()].index() + 1)
-                        ..=self.cfginfo.insn_block[split_at_point.inst().index()].index()
-                    {
-                        if self.cfginfo.approx_loop_depth[block] > bundle_start_depth {
-                            split_at_point = self.cfginfo.block_entry[block];
-                            break;
-                        }
-                    }
-                }
+                split_at_point = self.adjust_split_point_backward(split_at_point, bundle_start);
 
                 self.split_and_requeue_bundle(
                     bundle,
