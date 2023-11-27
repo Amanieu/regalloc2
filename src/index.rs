@@ -37,6 +37,23 @@ macro_rules! define_index {
                 self.storage.push(value);
                 idx
             }
+
+            #[inline(always)]
+            pub fn get_pair_mut(&mut self, ix1: $ix, ix2: $ix) -> (&mut $elem, &mut $elem) {
+                if ix1 < ix2 {
+                    let (first, second) = self.storage.split_at_mut(ix1.index() + 1);
+                    (
+                        &mut first[ix1.index()],
+                        &mut second[ix2.index() - ix1.index() - 1],
+                    )
+                } else {
+                    let (first, second) = self.storage.split_at_mut(ix2.index() + 1);
+                    (
+                        &mut second[ix1.index() - ix2.index() - 1],
+                        &mut first[ix2.index()],
+                    )
+                }
+            }
         }
 
         impl core::ops::Index<$ix> for $storage {
