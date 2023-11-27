@@ -100,6 +100,7 @@ impl<'a, F: Function> Env<'a, F> {
         self.build_liveranges();
         self.fixup_multi_fixed_vregs();
         self.merge_vreg_bundles();
+        self.legalize_bundle_requirements();
         self.queue_bundles();
         if trace_enabled!() {
             self.dump_state();
