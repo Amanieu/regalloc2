@@ -13,8 +13,8 @@
 //! Code related to bundle splitting.
 
 use super::{
-    Env, LiveBundleIndex, LiveBundleVec, LiveRangeFlag, LiveRangeIndex, LiveRangeListEntry,
-    UseList, VRegIndex,
+    requirement::Requirement, Env, LiveBundleIndex, LiveBundleVec, LiveRangeFlag, LiveRangeIndex,
+    LiveRangeListEntry, UseList, VRegIndex,
 };
 use crate::{
     ion::data_structures::{CodeRange, MAX_SPLITS_PER_SPILLSET},
@@ -672,5 +672,108 @@ impl<'a, F: Function> Env<'a, F> {
             trace!(" -> moving split point out of loop from {orig_split:?} to {split:?}");
         }
         split
+    }
+
+    /// When bundles are first created, they may have conflicting requirements,
+    /// for example two uses with different fixed registers. Additionally,
+    /// bundle merging may have introduced additional conflict.
+    ///
+    /// We handle all requirement conflicts upfront by splitting the bundle into
+    /// pieces which each have satisfiable requirements.
+    pub fn legalize_bundle_requirements(&mut self) {
+        // New bundles may be inserted while we iterate, but those are
+        // guaranteed to have satisfiable requirements.
+        for bundle in 0..self.bundles.len() {
+            self.split_bundle_for_requirements(LiveBundleIndex::new(bundle));
+        }
+    }
+
+    fn split_bundle_for_requirements(&mut self, bundle: LiveBundleIndex) {
+        // Nothing to do if the bundle has no fixed or stack constraints
+        if !self.bundles[bundle].cached_fixed() && !self.bundles[bundle].cached_stack() {
+            return;
+        }
+
+        // Outer loop for each time we need to split the bundle.
+        'outer: loop {
+            trace!("Checking bundle {bundle:?} for conflicting requirements");
+
+            // Iterate over the uses in the bundle in reverse order.
+            let mut last_fixed_reg = None;
+            let mut last_fixed_stack = None;
+            let mut last_stack = None;
+            let mut last_reg = None;
+            let mut requirement = Requirement::Any;
+            for u in self.bundles[bundle]
+                .ranges
+                .iter()
+                .flat_map(|entry| self.ranges[entry.index].uses.iter())
+                .rev()
+            {
+                trace!("  -> use {:?}", u);
+
+                // Check whether the new requirement from the use conflicts with
+                // existing requirements.
+                let new_req = self.requirement_from_operand(u.operand);
+                match new_req.merge(requirement) {
+                    Ok(merged) => {
+                        // No conflict! Keep track of the last seen use of each
+                        // type and continue.
+                        requirement = merged;
+                        trace!("     -> req {requirement:?}");
+                        match new_req {
+                            Requirement::FixedReg(_) => last_fixed_reg = Some(u.pos),
+                            Requirement::FixedStack(_) => last_fixed_stack = Some(u.pos),
+                            Requirement::Register => last_reg = Some(u.pos),
+                            Requirement::Stack => last_stack = Some(u.pos),
+                            Requirement::Any => {}
+                        }
+                    }
+                    Err(_) => {
+                        trace!("     -> conflict");
+
+                        // Conflict! We need to split the bundle to make it
+                        // allocatable. Find the previous conflicting use.
+                        let potentially_conflicting = match new_req {
+                            Requirement::FixedReg(_) => {
+                                [last_fixed_reg, last_fixed_stack, last_stack]
+                            }
+                            Requirement::FixedStack(_) => {
+                                [last_fixed_reg, last_fixed_stack, last_reg]
+                            }
+                            Requirement::Register => [last_fixed_stack, last_stack, None],
+                            Requirement::Stack => [last_fixed_reg, last_fixed_stack, last_reg],
+                            Requirement::Any => unreachable!(),
+                        };
+                        let mut conflicting = None;
+                        for pos in potentially_conflicting {
+                            let Some(pos) = pos else { continue };
+                            match conflicting {
+                                Some(prev) => conflicting = Some(core::cmp::min(prev, pos)),
+                                None => conflicting = Some(pos),
+                            }
+                        }
+                        let conflicting = conflicting.unwrap();
+
+                        // Split the bundle between the 2 conflicting uses,
+                        // while taking loop depth into account.
+                        let start = ProgPoint::before(u.pos.inst().next());
+                        let end = ProgPoint::before(conflicting.inst());
+                        let split_at = self.adjust_split_point_backward(end, start);
+                        let new_bundle = self.bundles.add();
+                        trace!(" -> creating new bundle {:?}", new_bundle);
+                        self.bundles[new_bundle].spillset = self.bundles[bundle].spillset;
+                        self.split_bundle_at(bundle, new_bundle, split_at, true);
+
+                        // Now that we've split off a conflicting use, continue
+                        // the scan in the original bundle.
+                        continue 'outer;
+                    }
+                }
+            }
+
+            // No conflicts found, we're done!
+            break;
+        }
     }
 }

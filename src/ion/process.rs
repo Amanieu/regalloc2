@@ -403,48 +403,26 @@ impl<'a, F: Function> Env<'a, F> {
         if self.pregs[hint_reg.index()].is_stack {
             hint_reg = PReg::invalid();
         }
-        trace!("process_bundle: bundle {:?} hint {:?}", bundle, hint_reg,);
+        trace!("process_bundle: bundle {:?} hint {:?}", bundle, hint_reg);
 
-        let req = match self.compute_requirement(bundle) {
-            Ok(req) => req,
-            Err(conflict) => {
-                trace!("conflict!: {:?}", conflict);
-                // We have to split right away. We'll find a point to
-                // split that would allow at least the first half of the
-                // split to be conflict-free.
-                debug_assert!(
-                    !self.minimal_bundle(bundle),
-                    "Minimal bundle with conflict!"
-                );
-                self.split_and_requeue_bundle(
-                    bundle,
-                    /* split_at_point = */ conflict.suggested_split_point(),
-                    reg_hint,
-                    /* trim_ends_into_spill_bundle = */
-                    conflict.should_trim_edges_around_split(),
-                );
-                return Ok(());
-            }
-        };
+        let req = self
+            .compute_requirement(bundle)
+            .expect("invalid bundle requirements");
 
         // If no requirement at all (because no uses), and *if* a
         // spill bundle is already present, then move the LRs over to
         // the spill bundle right away.
-        match req {
-            Requirement::Any => {
-                if let Some(spill) =
-                    self.get_or_create_spill_bundle(bundle, /* create_if_absent = */ false)
-                {
-                    let mut list =
-                        core::mem::replace(&mut self.bundles[bundle].ranges, smallvec![]);
-                    for entry in &list {
-                        self.ranges[entry.index].bundle = spill;
-                    }
-                    self.bundles[spill].ranges.extend(list.drain(..));
-                    return Ok(());
+        if req == Requirement::Any {
+            if let Some(spill) =
+                self.get_or_create_spill_bundle(bundle, /* create_if_absent = */ false)
+            {
+                let mut list = core::mem::replace(&mut self.bundles[bundle].ranges, smallvec![]);
+                for entry in &list {
+                    self.ranges[entry.index].bundle = spill;
                 }
+                self.bundles[spill].ranges.extend(list.drain(..));
+                return Ok(());
             }
-            _ => {}
         }
 
         // Try to allocate!
