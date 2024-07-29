@@ -8,3 +8,4 @@ pub mod fastalloc;
 pub mod func;
 pub mod ion;
 pub mod moves;
+pub mod regalloc3;

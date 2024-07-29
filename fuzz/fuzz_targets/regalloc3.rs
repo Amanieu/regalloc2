@@ -1,0 +1,13 @@
+/*
+ * Released under the terms of the Apache 2.0 license with LLVM
+ * exception. See `LICENSE` for details.
+ */
+
+#![no_main]
+use libfuzzer_sys::fuzz_target;
+use regalloc2::fuzzing::regalloc3;
+
+fuzz_target!(|test_case: regalloc3::TestCase| {
+    let _ = env_logger::try_init();
+    regalloc3::check(test_case);
+});

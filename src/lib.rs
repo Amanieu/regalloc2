@@ -50,6 +50,7 @@ pub mod indexset;
 pub(crate) mod ion;
 pub(crate) mod moves;
 pub(crate) mod postorder;
+pub(crate) mod regalloc3;
 pub mod ssa;
 
 #[macro_use]
@@ -1637,7 +1638,7 @@ pub fn run<F: Function>(
     options: &RegallocOptions,
 ) -> Result<Output, RegAllocError> {
     match options.algorithm {
-        Algorithm::Ion => {
+        Algorithm::Ion | Algorithm::Regalloc3 => {
             let mut ctx = Ctx::default();
             run_with_ctx(func, env, options, &mut ctx)?;
             Ok(ctx.output)
@@ -1662,6 +1663,13 @@ pub fn run_with_ctx<'a, F: Function>(
         Algorithm::Fastalloc => {
             ctx.output = fastalloc::run(func, env, options.verbose_log, options.validate_ssa)?
         }
+        Algorithm::Regalloc3 => ctx.ra3_ctx.run(
+            func,
+            env,
+            &mut ctx.cfginfo,
+            &mut ctx.cfginfo_ctx,
+            &mut ctx.output,
+        )?,
     }
     Ok(&ctx.output)
 }
@@ -1671,6 +1679,7 @@ pub enum Algorithm {
     #[default]
     Ion,
     Fastalloc,
+    Regalloc3,
 }
 
 /// Options for allocation.
